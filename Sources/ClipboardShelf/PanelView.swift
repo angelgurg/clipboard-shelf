@@ -242,7 +242,6 @@ struct ClipRow: View {
                 .lineLimit(clip.kind == .link ? 2 : 3)
                 .truncationMode(clip.kind == .link ? .middle : .tail)
                 .foregroundStyle(selected ? Color.white : Color.primary)
-                .padding(.trailing, hovered ? 44 : 0)
         }
     }
 
