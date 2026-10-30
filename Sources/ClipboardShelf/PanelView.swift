@@ -340,10 +340,20 @@ struct SnippetRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(snippet.name)
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
-                .foregroundStyle(selected ? Color.white : Color.primary)
+            HStack(spacing: 6) {
+                Text(snippet.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                if let trigger = snippet.trigger, !trigger.isEmpty {
+                    Text(trigger)
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill((selected ? Color.white.opacity(0.25) : Color.primary.opacity(0.1))))
+                        .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+                }
+                Spacer(minLength: 0)
+            }
             Text(snippet.text)
                 .font(.system(size: 11, design: .monospaced))
                 .lineLimit(2)
@@ -384,12 +394,13 @@ struct SnippetRow: View {
     }
 }
 
-/// Fills the panel while a snippet is being written or edited: name, body, Save and Cancel.
+/// Fills the panel while a snippet is being written or edited: name, trigger, body, Save, Cancel.
 struct SnippetEditor: View {
     @ObservedObject var model: PanelModel
     let state: PanelModel.EditorState
     @State private var name: String
     @State private var text: String
+    @State private var trigger: String
     @FocusState private var bodyFocused: Bool
 
     init(model: PanelModel, state: PanelModel.EditorState) {
@@ -397,10 +408,17 @@ struct SnippetEditor: View {
         self.state = state
         _name = State(initialValue: state.name)
         _text = State(initialValue: state.text)
+        _trigger = State(initialValue: state.trigger)
     }
 
     private var isNew: Bool { state.id == nil }
-    private var canSave: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var triggerOK: Bool {
+        let t = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty || Snippet.cleanTrigger(t) == t
+    }
+    private var canSave: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && triggerOK
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -426,6 +444,21 @@ struct SnippetEditor: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
                 .onSubmit { bodyFocused = true }
 
+            VStack(alignment: .leading, spacing: 3) {
+                TextField("Trigger while typing (e.g. -email)", text: $trigger)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, design: .monospaced))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                    .onSubmit { bodyFocused = true }
+                if !triggerOK {
+                    Text("A trigger needs 2+ characters and no spaces.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                }
+            }
+
             TextEditor(text: $text)
                 .font(.system(size: 12, design: .monospaced))
                 .scrollContentBackground(.hidden)
@@ -436,7 +469,7 @@ struct SnippetEditor: View {
                 .frame(maxHeight: .infinity)
 
             HStack {
-                Text("Esc cancels · ⇧↩ saves")
+                Text("Type the trigger anywhere to paste · Esc cancels")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -464,6 +497,7 @@ struct SnippetEditor: View {
     private func commit() {
         model.editor?.name = name
         model.editor?.text = text
+        model.editor?.trigger = trigger
         model.commitEditor()
     }
 }

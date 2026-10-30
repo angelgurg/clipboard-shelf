@@ -17,6 +17,10 @@ pick one with the arrow keys and press Return, and it's pasted into the app you'
 - **Snippets.** ⌥S opens the panel on the Snippets tab. Add a snippet with ⌘N (or the + button),
   give it a name and a text, and it stays until you delete it — Clear History never touches it.
   Search, arrows, Return and ⌘1–⌘9 paste a snippet exactly like a clip.
+- **Triggers type themselves.** Give a snippet a trigger like `-email`; type that trigger in any
+  app and the snippet's text is pasted at the cursor — the typed trigger is deleted as it
+  expands. Word-like triggers (starting with a letter) only expand at a word boundary, never in
+  password fields, and the clipboard is restored right after. Settings can turn this off.
 - **Pinned clips** stay at the top of All and are never removed, by the history limit or by Clear.
 - **Keeps text, formatting, links, images and files.** Formatting (RTF, HTML) comes back when you
   paste. ⇧Return pastes the text only, without formatting.
@@ -58,7 +62,8 @@ History and Settings.
 Pasting into another app means pressing ⌘V for you, and opening at the text cursor means asking
 the app where its cursor is. Both need **System Settings › Privacy & Security › Accessibility**.
 The app asks on its first launch. Without it, choosing a clip copies it and you press ⌘V
-yourself, and the panel opens at the mouse.
+yourself, and the panel opens at the mouse. Trigger expansion needs the same access; it stays
+off until it's allowed.
 
 `build.sh` signs with the `Local Self-Signed` certificate when this Mac has it, so the permission
 survives rebuilds. With an ad hoc signature, macOS forgets it after every build: remove the app
@@ -79,8 +84,8 @@ scripts/install.sh --dest ~/Applications
 
 `~/Library/Application Support/ClipboardShelf`: `history.json` lists the clips, `blobs/` holds
 each clip's clipboard data (`<id>.plist`) and an image's thumbnail (`<id>.png`), and
-`snippets.json` lists your snippets. It stays on this Mac. Settings › History sets how many
-unpinned clips to keep (200 by default).
+`snippets.json` lists your snippets with their triggers. It stays on this Mac.
+Settings › History sets how many unpinned clips to keep (200 by default).
 
 Only these formats are read from the clipboard: plain text, RTF, RTFD, HTML, web archive, URL,
 file URL, PNG, TIFF, JPEG and HEIC. Reading every format an app offers can make apps such as

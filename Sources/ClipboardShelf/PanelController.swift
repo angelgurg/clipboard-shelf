@@ -105,11 +105,13 @@ final class PanelController: NSObject, NSWindowDelegate {
 
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(model.field)
+        Expander.shared.suspend(true)
         startKeyMonitor()
     }
 
     func close() {
         guard isShown else { return }
+        Expander.shared.suspend(false)
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         panel.orderOut(nil)

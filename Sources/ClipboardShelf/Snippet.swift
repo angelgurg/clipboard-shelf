@@ -1,22 +1,35 @@
 import AppKit
 
 /// One saved snippet: a named piece of text you paste any time, kept forever
-/// (never pruned or cleared with the clipboard history).
+/// (never pruned or cleared with the clipboard history). An optional `trigger`
+/// expands while typing: type `-email` in any app and the text is pasted there.
 struct Snippet: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
     var text: String
+    /// Typed in any app (no spaces, 2+ characters) to paste this snippet at the cursor.
+    var trigger: String?
     var createdAt: Date
 
-    init(id: UUID = UUID(), name: String, text: String, createdAt: Date = Date()) {
+    init(id: UUID = UUID(), name: String, text: String, trigger: String? = nil, createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.text = text
+        self.trigger = trigger
         self.createdAt = createdAt
     }
 
     /// Lowercased text the search matches against.
-    var searchText: String { (name + " " + text).lowercased() }
+    var searchText: String {
+        (name + " " + text + " " + (trigger ?? "")).lowercased()
+    }
+
+    /// A trigger trimmed and checked; nil when there isn't one worth using.
+    static func cleanTrigger(_ raw: String) -> String? {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count >= 2, !t.contains(where: \.isWhitespace) else { return nil }
+        return t
+    }
 
     /// A short name from the text when the user left the name empty.
     static func defaultName(for text: String) -> String {

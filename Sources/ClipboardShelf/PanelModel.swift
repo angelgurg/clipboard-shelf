@@ -53,6 +53,7 @@ final class PanelModel: ObservableObject {
         var id: UUID?
         var name: String
         var text: String
+        var trigger: String
     }
 
     let history: History
@@ -158,9 +159,10 @@ final class PanelModel: ObservableObject {
     /// Opens the editor for a new snippet, or for the given one.
     func editSnippet(_ snippet: Snippet? = nil) {
         if let snippet {
-            editor = EditorState(id: snippet.id, name: snippet.name, text: snippet.text)
+            editor = EditorState(id: snippet.id, name: snippet.name, text: snippet.text,
+                                 trigger: snippet.trigger ?? "")
         } else {
-            editor = EditorState(id: nil, name: "", text: "")
+            editor = EditorState(id: nil, name: "", text: "", trigger: "")
         }
     }
 
@@ -175,9 +177,11 @@ final class PanelModel: ObservableObject {
         }
         let snippet: Snippet
         if let id = state.id, let old = snippets.snippets.first(where: { $0.id == id }) {
-            snippet = Snippet(id: id, name: state.name, text: state.text, createdAt: old.createdAt)
+            snippet = Snippet(id: id, name: state.name, text: state.text,
+                              trigger: Snippet.cleanTrigger(state.trigger), createdAt: old.createdAt)
         } else {
-            snippet = Snippet(name: state.name, text: state.text)
+            snippet = Snippet(name: state.name, text: state.text,
+                              trigger: Snippet.cleanTrigger(state.trigger))
         }
         snippets.upsert(snippet)
         editor = nil

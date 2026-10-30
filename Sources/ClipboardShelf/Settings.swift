@@ -60,6 +60,7 @@ struct SettingsView: View {
     @ObservedObject private var snippetsHotKey = HotKey.snippets
     @AppStorage("maxItems") private var maxItems = 200
     @AppStorage("maskSecrets") private var maskSecrets = true
+    @AppStorage("expandTriggers") private var expandTriggers = true
     @State private var trusted = Paster.trusted
     @State private var confirmClear = false
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -120,10 +121,14 @@ struct SettingsView: View {
                 LabeledContent("Saved snippets") {
                     Text("\(snippets.snippets.count) snippet\(snippets.snippets.count == 1 ? "" : "s")")
                 }
+                Toggle("Expand triggers while typing", isOn: $expandTriggers)
+                    .onChange(of: expandTriggers) { _, _ in
+                        if expandTriggers { Expander.shared.start() }
+                    }
             } header: {
                 Text("Snippets")
             } footer: {
-                note("Snippets are texts you paste often. Open the Snippets tab in the panel (or press the snippets shortcut), add one with ⌘N, and pick it to paste. Snippets stay until you delete them; Clear History never removes them.")
+                note("Snippets are texts you paste often. Open the Snippets tab in the panel (or press the snippets shortcut), add one with ⌘N, and pick it to paste. Give a snippet a trigger like -email and typing it in any app pastes the snippet right where the cursor is (needs Accessibility; never in password fields). Snippets stay until you delete them; Clear History never removes them.")
             }
 
             Section {
@@ -142,6 +147,7 @@ struct SettingsView: View {
         .onReceive(tick) { _ in
             trusted = Paster.trusted
             login.refresh()
+            if trusted { Expander.shared.start() } // the tap can be created now that access is allowed
         }
     }
 

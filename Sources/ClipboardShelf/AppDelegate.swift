@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.onSettings = { [weak self] in self?.settings.show() }
         HotKey.shared.onPress = { [weak self] in self?.panel.toggleAtCaret() }
         HotKey.snippets.onPress = { [weak self] in self?.panel.toggleAtCaret(tab: .snippets) }
+        Expander.shared.configure(snippets: snippets, watcher: watcher)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
