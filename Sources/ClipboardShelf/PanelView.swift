@@ -1,14 +1,26 @@
 import AppKit
 import SwiftUI
 
-/// The popup: search field, tabs, the clips, and a line of key hints.
+/// The popup: search field, tabs, the clips or snippets, and a line of key hints.
 struct PanelView: View {
-    static let size = CGSize(width: 340, height: 470)
+    static let size = CGSize(width: 370, height: 470)
 
     @ObservedObject var model: PanelModel
     @ObservedObject var history: History
+    @ObservedObject var snippets: SnippetStore
 
     var body: some View {
+        Group {
+            if let editor = model.editor {
+                SnippetEditor(model: model, state: editor)
+            } else {
+                main
+            }
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+    }
+
+    private var main: some View {
         VStack(spacing: 0) {
             SearchField(model: model)
                 .padding(.horizontal, 10)
@@ -20,7 +32,6 @@ struct PanelView: View {
             Divider().opacity(0.6)
             footer
         }
-        .frame(width: Self.size.width, height: Self.size.height)
     }
 
     private var tabs: some View {
@@ -31,10 +42,11 @@ struct PanelView: View {
                 } label: {
                     HStack(spacing: 3) {
                         if t == .pinned { Image(systemName: "pin.fill").font(.system(size: 9)) }
+                        if t == .snippets { Image(systemName: "text.badge.plus").font(.system(size: 9)) }
                         Text(t.rawValue)
                     }
                     .font(.system(size: 11.5, weight: model.tab == t ? .semibold : .regular))
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: 6).fill(model.tab == t ? Color.primary.opacity(0.12) : .clear))
                     .contentShape(Rectangle())
@@ -69,13 +81,25 @@ struct PanelView: View {
 
     @ViewBuilder private var list: some View {
         let sections = model.sections
-        let selectedID = model.selection ?? sections.first?.clips.first?.id
+        let selectedID = model.selection ?? sections.first?.items.first?.id
         if sections.isEmpty {
             VStack(spacing: 6) {
                 Spacer()
-                Image(systemName: model.query.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+                Image(systemName: emptyIcon)
                     .font(.system(size: 26)).foregroundStyle(.tertiary)
                 Text(emptyText).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                if model.tab == .snippets, model.query.isEmpty {
+                    Button {
+                        model.editSnippet()
+                    } label: {
+                        Label("Add Snippet", systemImage: "plus")
+                            .font(.system(size: 12))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
                 Spacer()
             }
             .padding(.horizontal, 30)
@@ -93,15 +117,9 @@ struct PanelView: View {
                                     .padding(.horizontal, 2)
                                     .padding(.top, section.id == sections.first?.id ? 0 : 4)
                             }
-                            ForEach(section.clips) { clip in
-                                ClipRow(clip: clip, selected: clip.id == selectedID,
-                                        thumbnail: clip.kind == .image ? history.thumbnail(clip.id) : nil,
-                                        maskSecrets: model.maskSecrets,
-                                        onPaste: { model.onPaste(clip, false) },
-                                        onHover: { model.hover(clip.id) },
-                                        onPin: { history.togglePin(clip.id) },
-                                        onDelete: { history.delete(clip.id) })
-                                    .id(clip.id)
+                            ForEach(section.items) { item in
+                                itemRow(item, selectedID: selectedID)
+                                    .id(item.id)
                             }
                         }
                     }
@@ -115,10 +133,35 @@ struct PanelView: View {
         }
     }
 
+    @ViewBuilder private func itemRow(_ item: PanelItem, selectedID: UUID?) -> some View {
+        switch item {
+        case .clip(let clip):
+            ClipRow(clip: clip, selected: clip.id == selectedID,
+                    thumbnail: clip.kind == .image ? history.thumbnail(clip.id) : nil,
+                    maskSecrets: model.maskSecrets,
+                    onPaste: { model.onPaste(.clip(clip), false) },
+                    onHover: { model.hover(clip.id) },
+                    onPin: { history.togglePin(clip.id) },
+                    onDelete: { history.delete(clip.id) })
+        case .snippet(let snippet):
+            SnippetRow(snippet: snippet, selected: snippet.id == selectedID,
+                       onPaste: { model.onPaste(.snippet(snippet), false) },
+                       onHover: { model.hover(snippet.id) },
+                       onEdit: { model.editSnippet(snippet) },
+                       onDelete: { snippets.delete(snippet.id) })
+        }
+    }
+
+    private var emptyIcon: String {
+        if !model.query.isEmpty { return "magnifyingglass" }
+        return model.tab == .snippets ? "text.badge.plus" : "doc.on.clipboard"
+    }
+
     private var emptyText: String {
         if !model.query.isEmpty { return "Nothing matches “\(model.query)”." }
         switch model.tab {
         case .pinned: return "Nothing pinned yet. Select a clip and press ⌘P to keep it here."
+        case .snippets: return "Snippets are texts you paste often.\nAdd one and it stays until you remove it."
         case .all: return "Nothing copied yet. Copy something and it shows up here."
         default: return "No \(model.tab.rawValue.lowercased()) copied yet."
         }
@@ -126,26 +169,45 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Group {
-                Key("↩"); Text("paste")
-                Key("⇧↩"); Text("plain")
-                Key("⌘P"); Text("pin")
-            }
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            Button(model.confirmingClear ? "Clear all?" : "Clear") {
-                if model.confirmingClear {
-                    history.clearUnpinned()
-                    model.confirmingClear = false
-                } else {
-                    model.confirmingClear = true
+            if model.tab == .snippets {
+                Group {
+                    Key("↩"); Text("paste")
+                    Key("⇧↩"); Text("plain")
+                    Key("⌘N"); Text("new")
                 }
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Button {
+                    model.editSnippet()
+                } label: {
+                    Image(systemName: "plus.circle").font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("New snippet (⌘N)")
+            } else {
+                Group {
+                    Key("↩"); Text("paste")
+                    Key("⇧↩"); Text("plain")
+                    Key("⌘P"); Text("pin")
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Button(model.confirmingClear ? "Clear all?" : "Clear") {
+                    if model.confirmingClear {
+                        history.clearUnpinned()
+                        model.confirmingClear = false
+                    } else {
+                        model.confirmingClear = true
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: model.confirmingClear ? .semibold : .regular))
+                .foregroundStyle(model.confirmingClear ? Color.red : Color.secondary)
+                .help("Removes everything except pinned clips")
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 11, weight: model.confirmingClear ? .semibold : .regular))
-            .foregroundStyle(model.confirmingClear ? Color.red : Color.secondary)
-            .help("Removes everything except pinned clips")
             Button {
                 model.onSettings()
             } label: {
@@ -267,6 +329,168 @@ struct ClipRow: View {
     }
 }
 
+struct SnippetRow: View {
+    let snippet: Snippet
+    let selected: Bool
+    let onPaste: () -> Void
+    let onHover: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(snippet.name)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(selected ? Color.white : Color.primary)
+            Text(snippet.text)
+                .font(.system(size: 11, design: .monospaced))
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Color.accentColor : Color.primary.opacity(0.06)))
+        .overlay(alignment: .topTrailing) {
+            if hovered {
+                HStack(spacing: 2) {
+                    iconButton("pencil", help: "Edit", action: onEdit)
+                    iconButton("trash", help: "Delete (⌘⌫)", action: onDelete)
+                }
+                .padding(4)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onPaste)
+        .onHover { inside in
+            hovered = inside
+            if inside { onHover() }
+        }
+    }
+
+    private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10.5))
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(.regularMaterial))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .help(help)
+    }
+}
+
+/// Fills the panel while a snippet is being written or edited: name, body, Save and Cancel.
+struct SnippetEditor: View {
+    @ObservedObject var model: PanelModel
+    let state: PanelModel.EditorState
+    @State private var name: String
+    @State private var text: String
+    @FocusState private var bodyFocused: Bool
+
+    init(model: PanelModel, state: PanelModel.EditorState) {
+        self.model = model
+        self.state = state
+        _name = State(initialValue: state.name)
+        _text = State(initialValue: state.text)
+    }
+
+    private var isNew: Bool { state.id == nil }
+    private var canSave: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.badge.plus").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(isNew ? "New Snippet" : "Edit Snippet")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    model.editor = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Cancel (Esc)")
+            }
+
+            TextField("Name (optional)", text: $name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                .onSubmit { bodyFocused = true }
+
+            TextEditor(text: $text)
+                .font(.system(size: 12, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(4)
+                .frame(minHeight: 0)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                .focused($bodyFocused)
+                .frame(maxHeight: .infinity)
+
+            HStack {
+                Text("Esc cancels · ⇧↩ saves")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { model.editor = nil }
+                    .controlSize(.small)
+                Button("Save") { commit() }
+                    .controlSize(.small)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!canSave)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(12)
+        .onAppear {
+            if state.name.isEmpty { bodyFocused = true } else { bodyFocused = false }
+        }
+        .background(KeyResponder { key in
+            // Esc closes the editor; everything else goes to the fields.
+            if key.keyCode == 27 { model.editor = nil; return true }
+            if key.keyCode == 36, key.modifierFlags.contains(.shift) { commit(); return true }
+            return false
+        })
+    }
+
+    private func commit() {
+        model.editor?.name = name
+        model.editor?.text = text
+        model.commitEditor()
+    }
+}
+
+/// Runs a closure on key-downs that would otherwise reach the fields (Esc, ⇧↩).
+private struct KeyResponder: NSViewRepresentable {
+    let onKey: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = KeyCatchingView()
+        view.onKey = onKey
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        (view as? KeyCatchingView)?.onKey = onKey
+    }
+
+    private final class KeyCatchingView: NSView {
+        var onKey: (NSEvent) -> Bool = { _ in false }
+        override var acceptsFirstResponder: Bool { true }
+        override func keyDown(with event: NSEvent) {
+            if !onKey(event) { super.keyDown(with: event) }
+        }
+    }
+}
+
 /// The search field, an AppKit text field so the panel can focus it the moment it opens.
 struct SearchField: NSViewRepresentable {
     @ObservedObject var model: PanelModel
@@ -320,6 +544,7 @@ struct SearchField: NSViewRepresentable {
 
     func updateNSView(_ box: NSView, context: Context) {
         if let field = model.field, field.stringValue != model.query { field.stringValue = model.query }
+        model.field?.placeholderString = model.tab == .snippets ? "Search snippets" : "Search clipboard"
         let searching = !model.query.isEmpty
         let n = model.ordered.count
         context.coordinator.count?.stringValue = searching ? (n == 1 ? "1 result" : "\(n) results") : ""

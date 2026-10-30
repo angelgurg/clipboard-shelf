@@ -32,10 +32,11 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     let dark = rest.first == "dark"
     let query = rest.drop { $0 == "dark" }.joined(separator: " ")
     let history = History()
-    let model = PanelModel(history: history)
+    let snippets = SnippetStore()
+    let model = PanelModel(history: history, snippets: snippets)
     model.reset()
     model.query = query
-    let view = NSHostingView(rootView: PanelView(model: model, history: history)
+    let view = NSHostingView(rootView: PanelView(model: model, history: history, snippets: snippets)
         .background(dark ? Color(white: 0.17) : Color(white: 0.96)))
     view.frame = NSRect(origin: .zero, size: PanelView.size)
     let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)

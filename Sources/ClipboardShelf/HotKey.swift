@@ -18,6 +18,9 @@ struct Shortcut: Codable, Equatable {
     /// ⌥V, the Mac version of Windows' Win+V.
     static let standard = Shortcut(keyCode: UInt16(kVK_ANSI_V), modifiers: .option, key: "V")
 
+    /// ⌥S, opens the snippets panel.
+    static let standardSnippets = Shortcut(keyCode: UInt16(kVK_ANSI_S), modifiers: .option, key: "S")
+
     var display: String {
         var s = ""
         if flags.contains(.control) { s += "⌃" }
@@ -50,44 +53,59 @@ struct Shortcut: Codable, Equatable {
     ]
 }
 
-/// The shortcut that opens and closes the panel from any app (Settings › Shortcut), ⌥V unless changed.
-/// Carbon's RegisterEventHotKey: works without Accessibility access, and the key press
-/// goes to Clipboard Shelf only.
+/// A shortcut that opens something from any app (Settings › Shortcut): ⌥V for the clipboard,
+/// ⌥S for snippets. Carbon's RegisterEventHotKey: works without Accessibility access, and the
+/// key press goes to Clipboard Shelf only.
 final class HotKey: ObservableObject {
-    static let shared = HotKey()
-    private static let defaultsKey = "toggleShortcut"
-    /// Set when the shortcut was removed in Settings, so ⌥V doesn't come back on the next launch.
-    private static let offKey = "toggleShortcutOff"
+    /// Opens and closes the clipboard panel, ⌥V unless changed in Settings.
+    static let shared = HotKey(id: 1, defaultsKey: "toggleShortcut", offKey: "toggleShortcutOff", fallback: .standard)
+    /// Opens and closes the snippets panel, ⌥S unless changed in Settings.
+    static let snippets = HotKey(id: 2, defaultsKey: "snippetShortcut", offKey: "snippetShortcutOff", fallback: .standardSnippets)
 
     @Published private(set) var shortcut: Shortcut?
     /// Set when another app already uses the shortcut.
     @Published private(set) var error: String?
     var onPress: () -> Void = {}
 
+    private let id: UInt32
+    private let defaultsKey: String
+    private let offKey: String
+    private let fallback: Shortcut
     private var ref: EventHotKeyRef?
 
-    private init() {
-        if let data = UserDefaults.standard.data(forKey: Self.defaultsKey) {
+    private init(id: UInt32, defaultsKey: String, offKey: String, fallback: Shortcut) {
+        self.id = id
+        self.defaultsKey = defaultsKey
+        self.offKey = offKey
+        self.fallback = fallback
+        if let data = UserDefaults.standard.data(forKey: defaultsKey) {
             shortcut = try? JSONDecoder().decode(Shortcut.self, from: data)
-        } else if !UserDefaults.standard.bool(forKey: Self.offKey) {
-            shortcut = .standard
+        } else if !UserDefaults.standard.bool(forKey: offKey) {
+            shortcut = fallback
         }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { HotKey.shared.onPress() }
+        let userData = Unmanaged.passUnretained(self).toOpaque()
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
+            guard let event, let userData else { return noErr }
+            let hotKey = Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue()
+            var hkID = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hkID)
+            guard hkID.id == hotKey.id else { return noErr }
+            DispatchQueue.main.async { hotKey.onPress() }
             return noErr
-        }, 1, &spec, nil, nil)
+        }, 1, &spec, userData, nil)
         register()
     }
 
     func set(_ new: Shortcut?) {
         shortcut = new
         if let new, let data = try? JSONEncoder().encode(new) {
-            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+            UserDefaults.standard.set(data, forKey: defaultsKey)
         } else {
-            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
         }
-        UserDefaults.standard.set(new == nil, forKey: Self.offKey)
+        UserDefaults.standard.set(new == nil, forKey: offKey)
         register()
     }
 
@@ -104,8 +122,8 @@ final class HotKey: ObservableObject {
         if shortcut.flags.contains(.option) { mods |= UInt32(optionKey) }
         if shortcut.flags.contains(.control) { mods |= UInt32(controlKey) }
         if shortcut.flags.contains(.shift) { mods |= UInt32(shiftKey) }
-        let id = EventHotKeyID(signature: OSType(0x434C_5348), id: 1) // "CLSH"
-        let status = RegisterEventHotKey(UInt32(shortcut.keyCode), mods, id, GetApplicationEventTarget(), 0, &ref)
+        let hkID = EventHotKeyID(signature: OSType(0x434C_5348), id: id) // "CLSH"
+        let status = RegisterEventHotKey(UInt32(shortcut.keyCode), mods, hkID, GetApplicationEventTarget(), 0, &ref)
         if status != noErr {
             ref = nil
             error = "Another app already uses \(shortcut.display). Choose another shortcut."

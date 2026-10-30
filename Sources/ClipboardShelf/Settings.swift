@@ -7,9 +7,13 @@ import SwiftUI
 /// Settings window, opened from the panel's gear or the menu bar icon's menu.
 final class SettingsWindowController {
     private let history: History
+    private let snippets: SnippetStore
     private var window: NSWindow?
 
-    init(history: History) { self.history = history }
+    init(history: History, snippets: SnippetStore) {
+        self.history = history
+        self.snippets = snippets
+    }
 
     func show() {
         if window == nil {
@@ -17,7 +21,7 @@ final class SettingsWindowController {
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "Clipboard Shelf Settings"
             w.isReleasedWhenClosed = false
-            w.contentViewController = NSHostingController(rootView: SettingsView(history: history))
+            w.contentViewController = NSHostingController(rootView: SettingsView(history: history, snippets: snippets))
             w.center()
             window = w
         }
@@ -50,8 +54,10 @@ final class LoginItem: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject var history: History
+    @ObservedObject var snippets: SnippetStore
     @StateObject private var login = LoginItem()
     @ObservedObject private var hotKey = HotKey.shared
+    @ObservedObject private var snippetsHotKey = HotKey.snippets
     @AppStorage("maxItems") private var maxItems = 200
     @AppStorage("maskSecrets") private var maskSecrets = true
     @State private var trusted = Paster.trusted
@@ -65,10 +71,14 @@ struct SettingsView: View {
                 if let error = hotKey.error {
                     Text(error).font(.footnote).foregroundStyle(.red)
                 }
+                LabeledContent("Open the snippets") { ShortcutRecorder(hotKey: snippetsHotKey) }
+                if let error = snippetsHotKey.error {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                }
             } header: {
                 Text("Shortcut")
             } footer: {
-                note("Press it in any app to open the clipboard next to the text cursor, and again to close it. To change it, click the button and press the new keys; Esc cancels, Delete removes it.")
+                note("Press the clipboard shortcut in any app to open the clipboard next to the text cursor, and the snippets shortcut to open your snippets. To change one, click the button and press the new keys; Esc cancels, Delete removes it.")
             }
 
             Section {
@@ -104,6 +114,16 @@ struct SettingsView: View {
                 Text("History")
             } footer: {
                 note("Pinned clips are never removed. Nothing copied in a password manager (1Password, Bitwarden, Passwords, Keychain Access) is kept, nor anything an app marks as concealed. Hidden secrets still paste in full.")
+            }
+
+            Section {
+                LabeledContent("Saved snippets") {
+                    Text("\(snippets.snippets.count) snippet\(snippets.snippets.count == 1 ? "" : "s")")
+                }
+            } header: {
+                Text("Snippets")
+            } footer: {
+                note("Snippets are texts you paste often. Open the Snippets tab in the panel (or press the snippets shortcut), add one with ⌘N, and pick it to paste. Snippets stay until you delete them; Clear History never removes them.")
             }
 
             Section {

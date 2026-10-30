@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var history: History!
+    private var snippets: SnippetStore!
     private var watcher: ClipboardWatcher!
     private var panel: PanelController!
     private var settings: SettingsWindowController!
@@ -11,12 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.editMenu()
         history = History()
+        snippets = SnippetStore()
         watcher = ClipboardWatcher(history: history)
         watcher.start()
-        settings = SettingsWindowController(history: history)
-        panel = PanelController(history: history, watcher: watcher)
+        settings = SettingsWindowController(history: history, snippets: snippets)
+        panel = PanelController(history: history, watcher: watcher, snippets: snippets)
         panel.onSettings = { [weak self] in self?.settings.show() }
         HotKey.shared.onPress = { [weak self] in self?.panel.toggleAtCaret() }
+        HotKey.snippets.onPress = { [weak self] in self?.panel.toggleAtCaret(tab: .snippets) }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -58,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let open = NSMenuItem(title: "Open Clipboard", action: #selector(openPanel), keyEquivalent: "")
         if let s = HotKey.shared.shortcut { open.title += "  \(s.display)" }
         menu.addItem(open)
+        let openSnippets = NSMenuItem(title: "Open Snippets", action: #selector(openSnippets), keyEquivalent: "")
+        if let s = HotKey.snippets.shortcut { openSnippets.title += "  \(s.display)" }
+        menu.addItem(openSnippets)
         let pause = NSMenuItem(title: "Pause Recording", action: #selector(togglePause), keyEquivalent: "")
         pause.state = watcher.paused ? .on : .off
         menu.addItem(pause)
@@ -71,6 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openPanel() {
         if let button = statusItem.button { panel.toggle(under: button) }
+    }
+
+    @objc private func openSnippets() {
+        if let button = statusItem.button { panel.toggle(under: button, tab: .snippets) }
     }
 
     @objc private func togglePause() {

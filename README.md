@@ -2,7 +2,8 @@
 
 A clipboard history for macOS that works like Windows' Win+V. Press **⌥V** in any app and a
 small panel opens next to the text cursor with everything you copied recently. Type to search,
-pick one with the arrow keys and press Return, and it's pasted into the app you're in.
+pick one with the arrow keys and press Return, and it's pasted into the app you're in. Press
+**⌥S** for your snippets: named texts you save once and paste any time.
 
 ## Features
 
@@ -12,7 +13,10 @@ pick one with the arrow keys and press Return, and it's pasted into the app you'
 - **Search as you type.** The search field is focused when the panel opens. Every word you type
   must appear in the clip or the name of the app it came from, and matching clips stay listed
   with the newest first.
-- **Tabs:** All, Pinned, Text, Images and Links. Tab and ⇧Tab switch between them.
+- **Tabs:** All, Pinned, Text, Images, Links and Snippets. Tab and ⇧Tab switch between them.
+- **Snippets.** ⌥S opens the panel on the Snippets tab. Add a snippet with ⌘N (or the + button),
+  give it a name and a text, and it stays until you delete it — Clear History never touches it.
+  Search, arrows, Return and ⌘1–⌘9 paste a snippet exactly like a clip.
 - **Pinned clips** stay at the top of All and are never removed, by the history limit or by Clear.
 - **Keeps text, formatting, links, images and files.** Formatting (RTF, HTML) comes back when you
   paste. ⇧Return pastes the text only, without formatting.
@@ -32,19 +36,22 @@ pick one with the arrow keys and press Return, and it's pasted into the app you'
 
 | Key | Does |
 | --- | --- |
-| ⌥V | Open or close the panel (change it in Settings) |
+| ⌥V | Open or close the clipboard panel (change it in Settings) |
+| ⌥S | Open or close the snippets panel (change it in Settings) |
 | ↑ ↓, Page Up/Down | Move the selection |
 | Return or a click | Paste |
 | ⇧Return | Paste as plain text |
 | ⌘1 – ⌘9 | Paste the first nine |
 | ⌘P | Pin or unpin |
-| ⌘⌫ | Delete the clip |
+| ⌘N | New snippet (on the Snippets tab) |
+| ⌘⌫ | Delete the clip or snippet |
 | Tab, ⇧Tab | Next or previous tab |
-| Esc | Clear the search, or close |
+| Esc | Clear the search, close, or leave the snippet editor |
 | ⌘, | Settings |
 
-Hovering a clip shows pin and delete buttons. Right-clicking the menu bar icon gives Pause
-Recording, Clear History and Settings.
+Hovering a clip shows pin and delete buttons; hovering a snippet shows edit and delete.
+Right-clicking the menu bar icon gives Open Clipboard, Open Snippets, Pause Recording, Clear
+History and Settings.
 
 ## Accessibility access
 
@@ -70,9 +77,10 @@ scripts/install.sh --dest ~/Applications
 
 ## Where the history is kept
 
-`~/Library/Application Support/ClipboardShelf`: `history.json` lists the clips, and `blobs/` holds
-each clip's clipboard data (`<id>.plist`) and an image's thumbnail (`<id>.png`). It stays on this
-Mac. Settings › History sets how many unpinned clips to keep (200 by default).
+`~/Library/Application Support/ClipboardShelf`: `history.json` lists the clips, `blobs/` holds
+each clip's clipboard data (`<id>.plist`) and an image's thumbnail (`<id>.png`), and
+`snippets.json` lists your snippets. It stays on this Mac. Settings › History sets how many
+unpinned clips to keep (200 by default).
 
 Only these formats are read from the clipboard: plain text, RTF, RTFD, HTML, web archive, URL,
 file URL, PNG, TIFF, JPEG and HEIC. Reading every format an app offers can make apps such as
