@@ -63,6 +63,7 @@ struct SettingsView: View {
     @AppStorage("expandTriggers") private var expandTriggers = true
     @State private var trusted = Paster.trusted
     @State private var confirmClear = false
+    @State private var watching = Expander.shared.running
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -125,10 +126,26 @@ struct SettingsView: View {
                     .onChange(of: expandTriggers) { _, _ in
                         if expandTriggers { Expander.shared.start() }
                     }
+                if trusted {
+                    LabeledContent("Trigger watcher") {
+                        if watching {
+                            Label("Always on", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Text("Starting…")
+                        }
+                    }
+                } else {
+                    LabeledContent("Trigger watcher") {
+                        Button("Allow…") {
+                            Paster.askForAccess()
+                            Paster.openAccessibilitySettings()
+                        }
+                    }
+                }
             } header: {
                 Text("Snippets")
             } footer: {
-                note("Snippets are texts you paste often. Open the Snippets tab in the panel (or press the snippets shortcut), add one with ⌘N, and pick it to paste. Give a snippet a trigger like -email and typing it in any app pastes the snippet right where the cursor is (needs Accessibility; never in password fields). Snippets stay until you delete them; Clear History never removes them.")
+                note("Snippets are texts you paste often. Open the Snippets tab in the panel (or press the snippets shortcut), add one with ⌘N, and pick it to paste. Give a snippet a trigger like -email and typing it anywhere pastes the snippet where the cursor is — the typed trigger is deleted as it expands, no click needed (needs Accessibility; never fires in password fields). Snippets stay until you delete them; Clear History never removes them.")
             }
 
             Section {
@@ -148,6 +165,7 @@ struct SettingsView: View {
             trusted = Paster.trusted
             login.refresh()
             if trusted { Expander.shared.start() } // the tap can be created now that access is allowed
+            watching = Expander.shared.running
         }
     }
 

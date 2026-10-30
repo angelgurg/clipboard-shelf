@@ -27,6 +27,7 @@ final class Expander {
     private var suspended = false
 
     private var tap: CFMachPort?
+    private var retry: Timer?
     private weak var watcher: ClipboardWatcher?
     private var cancellables: Set<AnyCancellable> = []
     /// Called on the main thread when the tap could or could not be created.
@@ -43,6 +44,19 @@ final class Expander {
             .store(in: &cancellables)
         rebuild(snippets.snippets)
         start()
+        // Always on the lookout: pick the tap up as soon as Accessibility is allowed
+        // (it may be granted long after launch), and wake it if macOS switched it off.
+        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if let tap = self.tap {
+                if !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
+            } else {
+                self.start()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        retry = t
+        onStatusChange()
     }
 
     /// Creates the event tap once Accessibility is allowed; safe to call repeatedly.
@@ -54,9 +68,10 @@ final class Expander {
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask,
             callback: { _, type, event, userInfo in
-                guard type == .keyDown, let userInfo else { return Unmanaged.passUnretained(event) }
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
                 let expander = Unmanaged<Expander>.fromOpaque(userInfo).takeUnretainedValue()
-                return expander.handle(event)
+                expander.tapEvent(type, event: event)
+                return Unmanaged.passUnretained(event)
             },
             userInfo: userData) else {
             onStatusChange()
@@ -74,43 +89,53 @@ final class Expander {
         onStatusChange()
     }
 
+    private func tapEvent(_ type: CGEventType, event: CGEvent) {
+        switch type {
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+        case .keyDown:
+            handle(event)
+        default:
+            break
+        }
+    }
+
     /// The panel is open: don't expand what is typed into its search field.
     func suspend(_ on: Bool) { suspended = on }
 
     // MARK: - Tap thread
 
-    private func handle(_ event: CGEvent) -> Unmanaged<CGEvent>? {
-        let pass = Unmanaged.passUnretained(event)
+    private func handle(_ event: CGEvent) {
         // Our own backspaces: seen, but they don't add characters.
-        if event.getIntegerValueField(.eventSourceUserData) == Self.marker { return pass }
+        if event.getIntegerValueField(.eventSourceUserData) == Self.marker { return }
         // Shortcuts, secure fields, the expansion's own keystrokes, feature off, our panel open.
         let flags = event.flags
         if flags.contains(.maskCommand) || flags.contains(.maskAlternate) || flags.contains(.maskControl) {
             resetBuffer()
-            return pass
+            return
         }
         if Date() < ignoreUntil || suspended || !enabled || IsSecureEventInputEnabled() {
-            return pass
+            return
         }
         if let front = NSWorkspace.shared.frontmostApplication,
            front.processIdentifier == ProcessInfo.processInfo.processIdentifier {
             resetBuffer()
-            return pass
+            return
         }
 
         switch Int(event.getIntegerValueField(.keyboardEventKeycode)) {
         case kVK_Delete, kVK_ForwardDelete:
             if !buffer.isEmpty { buffer.removeLast() }
-            return pass
+            return
         case kVK_Return, kVK_ANSI_KeypadEnter, kVK_Tab, kVK_Escape, kVK_Space,
              kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
              kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown:
-            resetBuffer() // a new context; space still counts via the letter check below
+            resetBuffer() // a new context; a space still works as a word boundary
             if Int(event.getIntegerValueField(.keyboardEventKeycode)) == kVK_Space {
                 buffer = " "
-                return matchAndExpand(pass)
+                matchAndExpand()
             }
-            return pass
+            return
         default:
             break
         }
@@ -119,25 +144,24 @@ final class Expander {
         var chars = [UniChar](repeating: 0, count: 8)
         event.keyboardGetUnicodeString(maxStringLength: 8, actualStringLength: &length, unicodeString: &chars)
         // One plain character only: IME composition and pasted input don't count.
-        guard length == 1 else { resetBuffer(); return pass }
+        guard length == 1 else { resetBuffer(); return }
         let ch = String(utf16CodeUnits: chars, count: length)
         guard let scalar = ch.unicodeScalars.first, scalar.value >= 32,
-              scalar.properties.generalCategory != .control else { return pass }
+              scalar.properties.generalCategory != .control else { return }
         buffer.append(ch)
         if buffer.count > 64 { buffer.removeFirst(buffer.count - 64) }
-        return matchAndExpand(pass)
+        matchAndExpand()
     }
 
     /// A trigger typed at the end of the buffer? Delete it and paste the snippet.
-    private func matchAndExpand(_ pass: Unmanaged<CGEvent>) -> Unmanaged<CGEvent>? {
-        guard let (text, length) = match() else { return pass }
+    private func matchAndExpand() {
+        guard let (text, length) = match() else { return }
         resetBuffer()
         ignoreUntil = Date().addingTimeInterval(0.25)
         DispatchQueue.main.async { [weak self] in
             self?.postBackspaces(length)
             self?.insert(text)
         }
-        return pass
     }
 
     /// The longest trigger the buffer ends with, and its length in characters.
