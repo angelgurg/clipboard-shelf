@@ -91,7 +91,8 @@ final class HotKey: ObservableObject {
             var hkID = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                               nil, MemoryLayout<EventHotKeyID>.size, nil, &hkID)
-            guard hkID.id == hotKey.id else { return noErr }
+            // Not ours: pass it on, or the other shortcut's handler never sees it.
+            guard hkID.id == hotKey.id else { return OSStatus(eventNotHandledErr) }
             DispatchQueue.main.async { hotKey.onPress() }
             return noErr
         }, 1, &spec, userData, nil)
