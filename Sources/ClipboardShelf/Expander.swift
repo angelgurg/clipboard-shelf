@@ -17,7 +17,6 @@ final class Expander {
     /// trigger → text; swapped in one lock, read on the tap thread.
     private let lock = NSLock()
     private var map: [String: String] = [:]
-    private var maxTrigger = 0
 
     /// The last characters typed, on the tap's thread only.
     private var buffer = ""
@@ -168,7 +167,8 @@ final class Expander {
     private func match() -> (String, Int)? {
         lock.lock()
         defer { lock.unlock() }
-        guard maxTrigger > 0, buffer.count >= maxTrigger else { return nil }
+        // Any buffer length: a short trigger must still match while a longer one exists.
+        guard !map.isEmpty else { return nil }
         for (trigger, text) in map.sorted(by: { $0.key.count > $1.key.count }) {
             guard buffer.hasSuffix(trigger) else { continue }
             let start = buffer.index(buffer.endIndex, offsetBy: -trigger.count)
@@ -186,15 +186,12 @@ final class Expander {
 
     private func rebuild(_ snippets: [Snippet]) {
         var m: [String: String] = [:]
-        var longest = 0
         for s in snippets {
             guard let trigger = Snippet.cleanTrigger(s.trigger ?? "") else { continue }
             m[trigger] = s.text
-            longest = max(longest, trigger.count)
         }
         lock.lock()
         map = m
-        maxTrigger = longest
         lock.unlock()
     }
 
